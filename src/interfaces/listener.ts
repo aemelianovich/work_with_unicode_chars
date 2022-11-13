@@ -1,10 +1,1 @@
-export interface Listener<T> {
-  next: (value: T) => void;
-  error?: (err: unknown) => void;
-  complete?: () => void;
-}
-
-export interface FullListener<T> extends Listener<T> {
-  error: (err: unknown) => void;
-  complete: () => void;
-}
+export type Listener<T> = AsyncGenerator<T> | Generator<T>;

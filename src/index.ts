@@ -1,7 +1,84 @@
-export { default as Stream } from './streams/stream';
+// export { default as Stream } from './streams/stream';
 
 // import type { Listener } from './interfaces/listener';
-// import xs from './streams/stream';
+import Stream from './streams/stream.js';
+import { EventEmitter } from 'node:events';
+
+const myEE = new EventEmitter();
+
+async function* on(el: EventEmitter, event: string): AsyncGenerator<number> {
+  const isIterate = true;
+  let inc = 0;
+  let cb: (() => void) | null;
+  el.on(event, (e) => {
+    if (cb != null) {
+      cb();
+      cb = null;
+    }
+  });
+
+  while (isIterate) {
+    if (inc === 3) {
+      throw new Error('MY FAKE ERROR');
+      return 6666;
+    }
+    yield new Promise<number>((resolve) => {
+      inc++;
+      // if (inc === 5) {
+      //   isIterate = false;
+      // }
+      cb = () => resolve(inc);
+    });
+  }
+}
+
+const stream = new Stream<number>(on(myEE, 'click'));
+setInterval(() => myEE.emit('click'), 2000);
+
+//const stream = new Stream<number>([1, 2, 3, 4, 5]);
+
+function createListener(listener: { next: any; return?: any; throw?: any }) {
+  function* create(): Generator<any> {
+    while (true) {
+      const res = yield;
+      listener.next(res);
+    }
+  }
+
+  const generator = create();
+  if (listener.return !== undefined) {
+    generator.return = listener.return;
+  }
+
+  if (listener.throw !== undefined) {
+    generator.throw = listener.throw;
+  }
+
+  generator.next();
+  return generator;
+}
+
+const listenerConsole = {
+  next: (val: unknown) => console.log('II', val),
+  return: (val?: unknown) => console.log('II COMPLETE', val),
+  throw: (err: unknown) => console.log('II ERROR:', err),
+};
+
+const listener = createListener(listenerConsole);
+
+const listenerConsole2 = {
+  next: (val: unknown) => console.log('BLA BLA', val),
+  return: () => console.log('BLA COMPLETE'),
+  throw: (err: unknown) => console.log('BLA ERROR:', err),
+};
+
+const listener2 = createListener(listenerConsole2);
+
+const streamListener2 = new Stream<number>();
+streamListener2.addListener(listener2);
+
+stream.addListener(listener);
+stream.addListener(streamListener2);
 
 // const producer = {
 //   id: 0,
