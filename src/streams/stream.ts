@@ -7,7 +7,7 @@ import { map } from '../operators/map';
 import { take } from '../operators/take';
 
 // Producers
-import getProducerFromStream from '../producers/fromStream';
+import getProducerFromStream from '../producers/from_stream';
 
 // Aggregators
 // import Combine from '../aggregators/combine';

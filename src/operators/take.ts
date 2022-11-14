@@ -1,5 +1,5 @@
 import Stream from '../streams/stream';
-import getProducerFromStream from '../producers/fromStream';
+import getProducerFromStream from '../producers/from_stream';
 
 export function take<T>(max: number, inStream: Stream<T>): Stream<T> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
