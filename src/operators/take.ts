@@ -1,62 +1,36 @@
-import type { Operator } from '../interfaces/operator';
-import type Stream from '../streams/stream';
+import Stream from '../streams/stream';
+import getProducerFromStream from '../producers/fromStream';
 
-export default class Take<T> implements Operator<T, T> {
-  #taken: number;
-  type = 'take';
-  inStream: Stream<T>;
-  outStream: Stream<T> | null;
-  max: number;
+export function take<T>(max: number, inStream: Stream<T>) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let outStream = <Stream<T>>(<any>null);
+  let taken = 0;
 
-  constructor(max: number, inStream: Stream<T>) {
-    this.inStream = inStream;
-    this.outStream = null;
-    this.max = max;
-    this.#taken = 0;
-  }
+  const listener = {
+    next: (value: T) => {
+      if (taken < max) {
+        outStream.next(value);
+        taken++;
+      }
 
-  start(outStream: Stream<T>): void {
-    this.outStream = outStream;
-    this.#taken = 0;
+      if (taken === max) {
+        outStream.return(undefined);
+      }
+    },
+    return: (value: T | undefined) => {
+      outStream.return(value);
+    },
+    throw: (err: unknown) => {
+      outStream.throw(err);
+    },
+  };
 
-    if (this.max <= 0) {
-      outStream.complete();
-    } else {
-      this.inStream.addListener(this);
-    }
-  }
+  const takeProducer = getProducerFromStream<T>(inStream, listener);
 
-  stop(): void {
-    this.inStream.removeListener(this);
-    this.outStream = null;
-  }
+  outStream = new Stream<T>(takeProducer, {
+    isMemoryStream: inStream.options.isMemoryStream,
+    isInfiniteStream: true,
+  });
 
-  next(value: T) {
-    if (this.outStream === null) {
-      return;
-    }
-
-    if (this.#taken < this.max) {
-      this.outStream.next(value);
-      this.#taken++;
-    }
-
-    if (this.#taken === this.max) {
-      this.outStream.complete();
-    }
-  }
-
-  error(err: unknown) {
-    if (this.outStream === null) {
-      return;
-    }
-    this.outStream.error(err);
-  }
-
-  complete() {
-    if (this.outStream === null) {
-      return;
-    }
-    this.outStream.complete();
-  }
+  return outStream;
 }

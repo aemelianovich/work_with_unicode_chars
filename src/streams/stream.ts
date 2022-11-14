@@ -1,43 +1,238 @@
-import type { Listener } from '../interfaces/listener';
+import type { Listener, ListenerMethods } from '../interfaces/listener';
 import type { Producer, ProducerIterator } from '../interfaces/producer';
+import type { StreamOptions } from '../interfaces/stream_options';
 
-// // Producers
-// import FromIterable from '../producers/from_iterable';
-// import FromStream from '../producers/from_stream';
-// import FromValue from '../producers/from_value';
-// // Operators
-// import Take from '../operators/take';
-// import Map from '../operators/map';
+// Operators
+import { map } from '../operators/map';
+import { take } from '../operators/take';
 
-// // Aggregators
+// Producers
+import getProducerFromStream from '../producers/fromStream';
+
+// Aggregators
 // import Combine from '../aggregators/combine';
 
 // Stream is an lazy event emitter with multiply Listeners
 // When an event happens on the Stream, it is broadcast to all its Listeners at the same time.
 // Stream can has A Producer is like a machine that produces events to be broadcast on a Stream.
 
-// Stream itself implements AsyncGenerator interface and can be used as Listener or Producer
+// Stream itself implements AsyncGenerator interface and can be used as Listener
 
 // Stream with isMemoryStream = true flag is a Stream which can store the last broadcasted event
 // Each new added listener will be immediately broadcasted with the last event
 // (By default Stream will broadcast new values to the new added listeners)
 export default class Stream<T> implements AsyncGenerator<T> {
+  // Create listener from object with methods next, return, throw
+  static createListener<T>(
+    methods: ListenerMethods<T>,
+  ): Generator<T | undefined> {
+    function* create(): Generator<T | undefined, T | undefined, T> {
+      while (true) {
+        const res = yield;
+        methods.next(res);
+      }
+    }
+
+    const generator = create();
+
+    generator.return = (value) => {
+      if (methods.return !== undefined) {
+        methods.return(value);
+      }
+      return { done: true, value: value };
+    };
+
+    generator.throw = (err) => {
+      if (methods.throw !== undefined) {
+        methods.throw(err);
+      }
+      return { done: true, value: undefined };
+    };
+
+    generator.next();
+    return generator;
+  }
+
+  /**
+   * Creates a Stream that does nothing when started. It never emits any event.
+   *
+   * Marble diagram:
+   *
+   * ```text
+   *          never
+   * -----------------------
+   * ```
+   */
+  static never<T>(): Stream<T> {
+    const options = {
+      isMemoryStream: false,
+      isInfiniteStream: true,
+    };
+
+    const neverStream = new Stream<T>([], options);
+
+    return neverStream;
+  }
+
+  /**
+   * Creates a Stream that immediately emits the "complete" notification when
+   * started, and that's it.
+   *
+   * Marble diagram:
+   *
+   * ```text
+   * empty
+   * -|
+   * ```
+   */
+  static empty<T>(): Stream<T> {
+    const options = {
+      isMemoryStream: false,
+      isInfiniteStream: false,
+    };
+
+    const emptyStream = new Stream<T>([], options);
+
+    return emptyStream;
+  }
+
+  /**
+   * Creates a Stream that immediately emits an "error" notification with the
+   * value you passed as the `error` argument when the stream starts, and that's
+   * it.
+   *
+   * Marble diagram:
+   *
+   * ```text
+   * throw(X)
+   * -X
+   * ```
+   */
+  static throw(error: unknown): Stream<unknown> {
+    const options = {
+      isMemoryStream: false,
+      isInfiniteStream: false,
+    };
+
+    const errorIter = function* () {
+      throw error;
+      yield;
+    };
+
+    const throwStream = new Stream<unknown>(errorIter(), options);
+
+    return throwStream;
+  }
+
+  /**
+   * Create Stream with isMemoryStream = true and isInfiniteStream=true to keep single value
+   * Dummy listener will be assigned to init last value
+   * This value will be emitted immediately for each new listener
+   *
+   * Marble diagram:
+   *
+   * ```text
+   * fromValue(1)
+   * 1 for each new listener
+   * ```
+   */
+  static fromValue<T extends string | number | boolean>(value: T): Stream<T> {
+    const options = {
+      isMemoryStream: true,
+      isInfiniteStream: true,
+    };
+    const valueStream = new Stream<T>([value], options);
+
+    // assign Dummy Listener to start a stream
+    valueStream.addListener(
+      Stream.createListener({
+        next: () => {
+          return;
+        },
+      }),
+    );
+
+    return valueStream;
+  }
+
+  /**
+   * Create Stream based on passed stream
+   *
+   */
+  static fromStream<T>(stream: Stream<T>): Stream<T> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let outStream = <Stream<T>>(<any>null);
+
+    const listener = {
+      next: (value: T) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        outStream.next(value);
+      },
+      return: (value?: T) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        outStream.return(value);
+      },
+      throw: (err: unknown) => {
+        outStream.throw(err);
+      },
+    };
+
+    const options = {
+      isMemoryStream: stream.options.isMemoryStream,
+      isInfiniteStream: true,
+    };
+    outStream = new Stream<T>(getProducerFromStream(stream, listener), options);
+
+    return outStream;
+  }
+  // Argument of type 'Listener<T> | { next: (value: T) => void; return: (value?: T | undefined) => void; throw: (err: unknown) => void; }' is not assignable to parameter of type 'Listener<T>'.
+  // Type '{ next: (value: T) => void; return: (value?: T) => void; throw: (err: unknown) => void; }' is not assignable to type 'Listener<T>'.
+  //   Types of property 'next' are incompatible.
+  //     Type '(value: T) => void' is not assignable to type '((...args: [] | [unknown]) => IteratorResult<T | undefined, any>) | ((...args: [] | [unknown]) => Promise<IteratorResult<T | undefined, any>>)'.
+  //       Type '(value: T) => void' is not assignable to type '(...args: [] | [unknown]) => IteratorResult<T | undefined, any>'.
+  //         Type 'void' is not assignable to type 'IteratorResult<T | undefined, any>'.
+
+  /**
+   * Creates a Stream that immediately emits the arguments that you give to
+   * *of*, then completes.
+   *
+   * Marble diagram:
+   *
+   * ```text
+   * of(1,2,3)
+   * 123|
+   * ```
+   */
+  static of<T>(...items: Array<T>): Stream<T> {
+    return new Stream<T>(items);
+  }
+
   producer: Producer<T> | null;
   #producerIter: ProducerIterator<T> | null;
-  #listeners: Array<Listener<T>>;
+  protected listeners: Array<Listener<T>>;
   #stopID: NodeJS.Timeout | null;
   #err: unknown | null;
-  #lastValue: T | null;
-  #isMemoryStream: boolean;
+  protected lastValue: T | null;
+  options: StreamOptions;
 
-  constructor(producer?: Producer<T>, isMemoryStream = false) {
+  constructor(
+    producer?: Producer<T>,
+    options: StreamOptions = {
+      isMemoryStream: false,
+      isInfiniteStream: false,
+    },
+  ) {
     this.producer = producer || null;
     this.#producerIter = null;
-    this.#listeners = [];
+    this.listeners = [];
     this.#stopID = null;
     this.#err = null;
-    this.#isMemoryStream = isMemoryStream;
-    this.#lastValue = null;
+    this.options = options;
+    this.lastValue = null;
+
+    if (producer instanceof Stream) {
+      return Stream.fromStream(producer);
+    }
   }
 
   [Symbol.asyncIterator]() {
@@ -47,15 +242,15 @@ export default class Stream<T> implements AsyncGenerator<T> {
   // tear down logic, after error or complete
   #clearStream(): void {
     this.#err = null;
-    this.#listeners = [];
-    this.#lastValue = null;
+    this.listeners = [];
+    this.lastValue = null;
     this.#producerIter = null;
   }
 
   // We can ask value only from memory stream
   getLastValue(): T | null {
-    if (this.#isMemoryStream) {
-      return this.#lastValue;
+    if (this.options.isMemoryStream) {
+      return this.lastValue;
     }
 
     throw new Error('Not a memory stream');
@@ -64,9 +259,9 @@ export default class Stream<T> implements AsyncGenerator<T> {
   // We can update value only in memory stream
   // It will immediately brodcast updated value
   updateLastValue(cb: (value: T | null) => T): void {
-    if (this.#isMemoryStream) {
-      const res = cb(this.#lastValue);
-      this.#lastValue = res;
+    if (this.options.isMemoryStream) {
+      const res = cb(this.lastValue);
+      this.lastValue = res;
       this.next(res);
       return;
     }
@@ -81,18 +276,26 @@ export default class Stream<T> implements AsyncGenerator<T> {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const producer = <any>this.producer;
+    let isAsync = true;
 
     if (typeof producer[Symbol.asyncIterator] === 'function') {
       this.#producerIter = <AsyncIterator<T>>producer[Symbol.asyncIterator]();
     } else if (typeof producer[Symbol.iterator] === 'function') {
       this.#producerIter = <Iterator<T>>producer[Symbol.iterator]();
+      isAsync = false;
     }
 
     let value: T | undefined;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, no-constant-condition
+      // eslint-disable-next-line no-constant-condition
       while (true) {
-        const res = await this.#producerIter!.next();
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const res = <IteratorResult<T>>(isAsync
+          ? // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            await this.#producerIter!.next()
+          : // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            this.#producerIter!.next());
+
         value = res.value;
 
         if (res.done) {
@@ -109,18 +312,20 @@ export default class Stream<T> implements AsyncGenerator<T> {
       return;
     }
 
-    this.return(value);
+    if (!this.options.isInfiniteStream) {
+      this.return(value);
+    }
   }
 
   // Stream itself is a AsyncIterator
   // It should implement next, return, throw methods
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async next(...values: [T | undefined]): Promise<IteratorResult<T | any>> {
-    this.#lastValue = values[values.length - 1] || null;
-    for (const listener of this.#listeners) {
+    this.lastValue = values[values.length - 1] || null;
+    for (const listener of this.listeners) {
       listener.next(...values);
     }
-    return { done: false, value: this.#lastValue };
+    return { done: false, value: this.lastValue };
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -132,12 +337,12 @@ export default class Stream<T> implements AsyncGenerator<T> {
       this.#producerIter.return(...values);
     }
 
-    for (const listener of this.#listeners) {
+    for (const listener of this.listeners) {
       listener.return(...values);
     }
 
     this.#clearStream();
-    return { done: true, value: this.#lastValue };
+    return { done: true, value: this.lastValue };
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -151,7 +356,7 @@ export default class Stream<T> implements AsyncGenerator<T> {
       this.#producerIter.return();
     }
 
-    for (const listener of this.#listeners) {
+    for (const listener of this.listeners) {
       listener.throw(e);
     }
 
@@ -161,13 +366,13 @@ export default class Stream<T> implements AsyncGenerator<T> {
 
   // Add a Listener to the Stream.
   addListener(listener: Listener<T>): void {
-    if (this.#isMemoryStream && this.#lastValue !== null) {
-      listener.next(this.#lastValue);
+    if (this.options.isMemoryStream && this.lastValue !== null) {
+      listener.next(this.lastValue);
     }
 
-    this.#listeners.push(listener);
+    this.listeners.push(listener);
 
-    if (this.#listeners.length === 1) {
+    if (this.listeners.length === 1) {
       // Start producer when the first listener was added
       if (this.producer !== null) {
         this.#startStream();
@@ -195,166 +400,16 @@ export default class Stream<T> implements AsyncGenerator<T> {
 
   // Removes a Listener from the Stream, assuming the Listener was added to it.
   removeListener(listener: Listener<T>): void {
-    const i = this.#listeners.indexOf(listener);
+    const i = this.listeners.indexOf(listener);
     if (i > -1) {
-      this.#listeners.splice(i, 1);
+      this.listeners.splice(i, 1);
       // Stop producer if all listeners were removed
       // Do it in async way in case if user would like to remove one listener and immediately add another listener
-      if (this.producer !== null && this.#listeners.length === 0) {
+      if (this.producer !== null && this.listeners.length === 0) {
         this.#stopID = setTimeout(() => this.#stopNow());
       }
     }
   }
-
-  // tear down logic, after error or complete
-  // #clearStream(): void {
-  //   this.#err = null;
-  //   this.#listeners = [];
-  //   this.#lastValue = null;
-  // }
-
-  // We can ask value only from memory stream
-  // getLastValue(): T | null {
-  //   if (this.#isMemoryStream) {
-  //     return this.#lastValue;
-  //   }
-
-  //   throw new Error('Not a memory stream');
-  // }
-
-  // We can update value only in memory stream
-  // It will immediately brodcast updated value
-  // updateLastValue(cb: (value: T | null) => T): void {
-  //   if (this.#isMemoryStream) {
-  //     const res = cb(this.#lastValue);
-  //     this.#lastValue = res;
-  //     this.next(res);
-  //     return;
-  //   }
-
-  //   throw new Error('Not a memory stream');
-  // }
-
-  // start the stream and send values to the all listeners
-  // async startStream() {
-
-  // }
-
-  // Stream itself is a Listener
-  // It should implement next, error, complete methods
-  // async next(value: T): void {
-  //   if (this.producer === null) {
-  //     throw new Error('Unable to start a stream with empty producer');
-  //   }
-
-  //   for await (const value of this.producer) {
-  //     this.#lastValue = value;
-
-  //     for (const listener of this.#listeners) {
-  //       listener.next(value);
-  //     }
-  //   }
-  // }
-
-  // error(err: unknown): void {
-  //   this.#err = err;
-
-  //   if (this.producer !== null) {
-  //     this.producer.stop();
-  //   }
-
-  //   if (this.#debugListener == null && this.#listeners.length === 0) {
-  //     throw this.#err;
-  //   }
-
-  //   if (
-  //     this.#debugListener !== null &&
-  //     this.#debugListener?.error !== undefined
-  //   ) {
-  //     this.#debugListener.error(err);
-  //   }
-
-  //   for (const listener of this.#listeners) {
-  //     if (listener?.error !== undefined) {
-  //       listener.error(err);
-  //     }
-  //   }
-
-  //   this.#clearStream();
-  // }
-
-  // complete(): void {
-  //   if (this.producer !== null) {
-  //     this.producer.stop();
-  //   }
-
-  //   if (
-  //     this.#debugListener !== null &&
-  //     this.#debugListener?.complete !== undefined
-  //   ) {
-  //     this.#debugListener.complete();
-  //   }
-  //   for (const listener of this.#listeners) {
-  //     if (listener?.complete !== undefined) {
-  //       listener.complete();
-  //     }
-  //   }
-  //   this.#clearStream();
-  // }
-
-  // Add a Listener to the Stream.
-  // addListener(listener: Listener<T>): void {
-  //   if (this.#imitationTarget !== null) {
-  //     this.#imitationTarget.addListener(listener);
-  //     return;
-  //   }
-
-  //   if (this.#isMemoryStream && this.#lastValue !== null) {
-  //     listener.next(this.#lastValue);
-  //   }
-
-  //   this.#listeners.push(listener);
-
-  //   if (this.#listeners.length === 1) {
-  //     // Start producer when the first listener was added
-  //     if (this.producer !== null) {
-  //       this.producer.start(this);
-  //     }
-
-  //     // Check whether async stop request was created when number of listeners were 0
-  //     // stop is async operation in case if we need remove one listener and immediately add another listener
-  //     // Once we added a new listener then we do not need to stop the stream
-  //     if (this.#stopID !== null) {
-  //       clearTimeout(this.#stopID);
-  //       this.#stopID = null;
-  //     }
-  //   }
-  // }
-
-  // #stopNow() {
-  //   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  //   this.producer!.stop();
-  //   this.#stopID = null;
-  //   this.#lastValue = null;
-  // }
-
-  // Removes a Listener from the Stream, assuming the Listener was added to it.
-  // removeListener(listener: Listener<T>): void {
-  //   if (this.#imitationTarget !== null) {
-  //     this.#imitationTarget.removeListener(listener);
-  //     return;
-  //   }
-
-  //   const i = this.#listeners.indexOf(listener);
-  //   if (i > -1) {
-  //     this.#listeners.splice(i, 1);
-  //     // Stop producer if all listeners were removed
-  //     // Do it in async way in case if user would like to remove one listener and immediately add another listener
-  //     if (this.producer !== null && this.#listeners.length === 0) {
-  //       this.#stopID = setTimeout(() => this.#stopNow());
-  //     }
-  //   }
-  // }
 
   /**
    * Lets the first number of events from the input stream pass to the
@@ -369,9 +424,9 @@ export default class Stream<T> implements AsyncGenerator<T> {
    * ```
    *
    */
-  // take(num: number): Stream<T> {
-  //   return new Stream<T>(new Take<T>(num, this), this.#isMemoryStream);
-  // }
+  take(num: number): Stream<T> {
+    return take(num, this);
+  }
 
   /**
    * Transforms each event from the input Stream through a cb(callback) function,
@@ -385,7 +440,7 @@ export default class Stream<T> implements AsyncGenerator<T> {
    * --10--30-50----70-----
    * ```
    */
-  // map<U>(cb: (t: T) => U): Stream<U> {
-  //   return new Stream<U>(new Map<T, U>(cb, this), this.#isMemoryStream);
-  // }
+  map<R>(cb: (t: T) => R): Stream<R> {
+    return map(cb, this);
+  }
 }

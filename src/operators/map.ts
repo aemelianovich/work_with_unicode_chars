@@ -1,52 +1,33 @@
-import type { Operator } from '../interfaces/operator';
-import type Stream from '../streams/stream';
+import Stream from '../streams/stream';
+import getProducerFromStream from '../producers/fromStream';
 
-export default class Map<T, R> implements Operator<T, R> {
-  type = 'map';
-  inStream: Stream<T>;
-  outStream: Stream<R> | null;
-  cb: (value: T) => R;
+export function map<T, R>(cb: (value: T) => R, inStream: Stream<T>) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let outStream = <Stream<R>>(<any>null);
 
-  constructor(cb: (value: T) => R, inStream: Stream<T>) {
-    this.inStream = inStream;
-    this.outStream = null;
-    this.cb = cb;
-  }
+  const listener = {
+    next: (value: T) => {
+      const res = cb(value);
+      outStream.next(res);
+    },
+    return: (value: T | undefined) => {
+      let res = undefined;
+      if (value !== undefined) {
+        res = cb(value);
+      }
+      outStream.return(res);
+    },
+    throw: (err: unknown) => {
+      outStream.throw(err);
+    },
+  };
 
-  start(outStream: Stream<R>): void {
-    this.outStream = outStream;
-    this.inStream.addListener(this);
-  }
+  const mapProducer = getProducerFromStream<T, R>(inStream, listener);
 
-  stop(): void {
-    this.inStream.removeListener(this);
-    this.outStream = null;
-  }
+  outStream = new Stream<R>(mapProducer, {
+    isMemoryStream: inStream.options.isMemoryStream,
+    isInfiniteStream: true,
+  });
 
-  next(value: T) {
-    if (this.outStream === null) {
-      return;
-    }
-
-    try {
-      const res = this.cb(value);
-      this.outStream.next(res);
-    } catch (err) {
-      this.error(err);
-    }
-  }
-
-  error(err: unknown) {
-    if (this.outStream === null) {
-      return;
-    }
-    this.outStream.error(err);
-  }
-
-  complete() {
-    if (this.outStream === null) {
-      return;
-    }
-    this.outStream.complete();
-  }
+  return outStream;
 }

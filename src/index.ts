@@ -4,6 +4,7 @@
 import Stream from './streams/stream.js';
 import { EventEmitter } from 'node:events';
 
+// Check Event Stream
 const myEE = new EventEmitter();
 
 async function* on(el: EventEmitter, event: string): AsyncGenerator<number> {
@@ -18,15 +19,12 @@ async function* on(el: EventEmitter, event: string): AsyncGenerator<number> {
   });
 
   while (isIterate) {
-    if (inc === 3) {
-      throw new Error('MY FAKE ERROR');
+    if (inc === 8) {
+      //throw new Error('MY FAKE ERROR');
       return 6666;
     }
     yield new Promise<number>((resolve) => {
       inc++;
-      // if (inc === 5) {
-      //   isIterate = false;
-      // }
       cb = () => resolve(inc);
     });
   }
@@ -35,44 +33,21 @@ async function* on(el: EventEmitter, event: string): AsyncGenerator<number> {
 const stream = new Stream<number>(on(myEE, 'click'));
 setInterval(() => myEE.emit('click'), 2000);
 
-//const stream = new Stream<number>([1, 2, 3, 4, 5]);
-
-function createListener(listener: { next: any; return?: any; throw?: any }) {
-  function* create(): Generator<any> {
-    while (true) {
-      const res = yield;
-      listener.next(res);
-    }
-  }
-
-  const generator = create();
-  if (listener.return !== undefined) {
-    generator.return = listener.return;
-  }
-
-  if (listener.throw !== undefined) {
-    generator.throw = listener.throw;
-  }
-
-  generator.next();
-  return generator;
-}
-
 const listenerConsole = {
-  next: (val: unknown) => console.log('II', val),
-  return: (val?: unknown) => console.log('II COMPLETE', val),
+  next: (val: number) => console.log('II', val),
+  return: (val?: number) => console.log('II COMPLETE', val),
   throw: (err: unknown) => console.log('II ERROR:', err),
 };
 
-const listener = createListener(listenerConsole);
+const listener = Stream.createListener(listenerConsole);
 
 const listenerConsole2 = {
-  next: (val: unknown) => console.log('BLA BLA', val),
+  next: (val: number) => console.log('BLA BLA', val),
   return: () => console.log('BLA COMPLETE'),
   throw: (err: unknown) => console.log('BLA ERROR:', err),
 };
 
-const listener2 = createListener(listenerConsole2);
+const listener2 = Stream.createListener(listenerConsole2);
 
 const streamListener2 = new Stream<number>();
 streamListener2.addListener(listener2);
@@ -80,80 +55,101 @@ streamListener2.addListener(listener2);
 stream.addListener(listener);
 stream.addListener(streamListener2);
 
-// const producer = {
-//   id: 0,
+const listenerConsole3 = {
+  next: (val: number) => console.log('3LIST', val),
+  return: (val?: number) => console.log('3LIST COMPLETE', val),
+  throw: (err: unknown) => console.log('3LIST ERROR:', err),
+};
 
-//   start: function (listener: Listener<string>) {
-//     let num = 0;
-//     this.id = setInterval(() => {
-//       num += 1;
-//       listener.next(`yo ${num}`);
-//     }, 2000)[Symbol.toPrimitive]();
-//   },
+const listener3 = Stream.createListener(listenerConsole3);
+setTimeout(() => stream.addListener(listener3), 6000);
+setTimeout(() => stream.removeListener(listener3), 12000);
+console.log('-------');
 
-//   stop: function () {
-//     clearInterval(this.id);
-//   },
-// };
+//
+//
+// Check Value Stream
+const a = Stream.fromValue(1);
+const b = Stream.fromValue(2);
+//const c = Stream.combine(a, b);
+//const d = Stream.toValue(c.map(([aValue, bValue]) => aValue + bValue + 5));
 
-// const stream = xs.create(producer);
-// stream.addListener({ next: (val) => console.log('first', val) });
-// stream.addListener({ next: (val) => console.log('second', val) });
+console.log('a:', a.getLastValue()); // 1
+console.log('b:', b.getLastValue()); // 2
+console.log('-------');
 
-// setTimeout(() => {
-//   stream.addListener({ next: (val) => console.log('third', val) });
-// }, 4000);
+//
+//
+// Check Complete Stream
+const completeConsole = {
+  next: () => console.log('Empty Stream next'),
+  return: () => console.log('Empty Stream COMPLETE'),
+  throw: (err: unknown) => console.log('Empty Stream ERROR:', err),
+};
 
-// const streamComplete = rs.empty();
+const streamComplete = Stream.empty();
+streamComplete.addListener(Stream.createListener(completeConsole));
+console.log('-------');
 
-// const listenerConsole = {
-//   next: (val: unknown) => console.log('II', val),
-//   complete: () => console.log('COMPLETE'),
-//   error: (err: unknown) => console.error(err),
-// };
+//
+//
+// Check Error Stream
+const errorConsole = {
+  next: () => console.log('Error Stream next'),
+  return: () => console.log('Error Stream COMPLETE'),
+  throw: (err: unknown) => console.log('Error Stream ERROR:', err),
+};
 
-// streamComplete.addListener(listenerConsole);
+const streamError = Stream.throw('My ERROR stream check');
+streamError.addListener(Stream.createListener(errorConsole));
+console.log('-------');
 
-// const streamError = rs.throw('My Error');
-// streamError.addListener(listenerConsole);
+//
+//
+// Check Never Stream
+const neverConsole = {
+  next: () => console.log('Never Stream next'),
+  return: () => console.log('Never Stream COMPLETE'),
+  throw: (err: unknown) => console.log('Never Stream ERROR:', err),
+};
 
-// const streamArray = rs.fromIterable(['a', 'b', 'c', 'd']);
-// streamArray.addListener(listenerConsole);
+const neverListener = Stream.createListener(neverConsole);
+const neverStream = Stream.never();
+neverStream.addListener(neverListener);
+console.log('------Never------');
+setTimeout(() => {
+  neverStream.removeListener(neverListener);
+}, 2000);
+console.log('-------');
 
-// const streamOf = rs.of('aa', 'bb', 'cc', 'dd');
-// streamOf.addListener(listenerConsole);
+//
+//
+// Check Of Stream
+const ofConsole = {
+  next: (val: number) => console.log('Of Stream next', val),
+  return: () => console.log('Of Stream COMPLETE'),
+  throw: (err: unknown) => console.log('Of Stream ERROR:', err),
+};
 
-// const streamNever = rs.never();
-// streamNever.addListener(listenerConsole);
+const streamOF = Stream.of<number>(1, 2, 3);
+streamOF.addListener(Stream.createListener(ofConsole));
+console.log('-------');
 
-// stream.addListener(streamNever);
+const MapConsole = {
+  next: (val: number) => console.log('Map Stream next', val),
+  return: (val?: number) => console.log('Map Stream COMPLETE', val),
+  throw: (err: unknown) => console.log('Map Stream ERROR:', err),
+};
 
-// const takeStream = stream.take(5);
+const mapStream = stream.map((val) => val * 10);
+mapStream.addListener(Stream.createListener(MapConsole));
 
-// takeStream.addListener(listenerConsole);
+const TakeConsole = {
+  next: (val: number) => console.log('Take Stream next', val),
+  return: (val?: number) => console.log('Take Stream COMPLETE', val),
+  throw: (err: unknown) => console.log('Take Stream ERROR:', err),
+};
 
-// const a$ = xs.fromValue<number>(1);
-// const b$ = xs.fromValue<number>(2);
-// const c$ = xs.toMemoryStream(xs.combine(a$, b$, takeStream));
-// c$.addListener(listenerConsole);
-
-// setTimeout(() => {
-//   b$.updateLastValue(() => 3);
-// }, 12000);
-
-// const mapStream = c$.map(([valA, valB, valC]) => {
-//   console.log('mapStream C:', valC);
-//   return valA + valB;
-// });
-
-// const mapListenerConsole = {
-//   next: (val: unknown) => console.log('map:', val),
-//   complete: () => console.log('map COMPLETE'),
-//   error: (err: unknown) => console.error(err),
-// };
-
-// mapStream.addListener(mapListenerConsole);
-
-// console.log('GET map last value:', mapStream.getLastValue());
-// b$.updateLastValue(() => 4);
-// console.log('GET map last value:', mapStream.getLastValue());
+const takeStream = stream.map((val) => val * 10).take(5);
+takeStream.addListener(Stream.createListener(TakeConsole));
+console.log('instanceof', stream instanceof Stream);
