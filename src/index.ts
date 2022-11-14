@@ -135,6 +135,9 @@ const streamOF = Stream.of<number>(1, 2, 3);
 streamOF.addListener(Stream.createListener(ofConsole));
 console.log('-------');
 
+//
+//
+// Check Map Stream
 const MapConsole = {
   next: (val: number) => console.log('Map Stream next', val),
   return: (val?: number) => console.log('Map Stream COMPLETE', val),
@@ -144,6 +147,9 @@ const MapConsole = {
 const mapStream = stream.map((val) => val * 10);
 mapStream.addListener(Stream.createListener(MapConsole));
 
+//
+//
+// Check Take Stream
 const TakeConsole = {
   next: (val: number) => console.log('Take Stream next', val),
   return: (val?: number) => console.log('Take Stream COMPLETE', val),
