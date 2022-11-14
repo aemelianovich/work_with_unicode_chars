@@ -1,7 +1,7 @@
 import Stream from '../streams/stream';
 import getProducerFromStream from '../producers/fromStream';
 
-export function take<T>(max: number, inStream: Stream<T>) {
+export function take<T>(max: number, inStream: Stream<T>): Stream<T> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let outStream = <Stream<T>>(<any>null);
   let taken = 0;

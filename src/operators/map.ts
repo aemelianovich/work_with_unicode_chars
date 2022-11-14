@@ -1,7 +1,7 @@
 import Stream from '../streams/stream';
 import getProducerFromStream from '../producers/fromStream';
 
-export function map<T, R>(cb: (value: T) => R, inStream: Stream<T>) {
+export function map<T, R>(cb: (value: T) => R, inStream: Stream<T>): Stream<R> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let outStream = <Stream<R>>(<any>null);
 

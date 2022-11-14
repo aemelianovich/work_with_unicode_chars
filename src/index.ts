@@ -11,7 +11,7 @@ async function* on(el: EventEmitter, event: string): AsyncGenerator<number> {
   const isIterate = true;
   let inc = 0;
   let cb: (() => void) | null;
-  el.on(event, (e) => {
+  el.on(event, () => {
     if (cb != null) {
       cb();
       cb = null;
