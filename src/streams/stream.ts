@@ -18,6 +18,9 @@ export default class Stream<T> implements AsyncIterable<T> {
       [Symbol.iterator]() {
         const value = this.value;
         return {
+          [Symbol.iterator]() {
+            return this;
+          },
           isDone: false,
           next() {
             if (this.isDone) {
