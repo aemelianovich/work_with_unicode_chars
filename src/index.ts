@@ -1,82 +1,159 @@
-export { default as Stream } from './streams/stream';
+// export { default as Stream } from './streams/stream';
 
 // import type { Listener } from './interfaces/listener';
-// import xs from './streams/stream';
+import Stream from './streams/stream.js';
+// import { EventEmitter } from 'node:events';
 
-// const producer = {
-//   id: 0,
+//
+//
+//
+const stream = new Stream<number>([1, 2, 3, 4, 5, 6]);
 
-//   start: function (listener: Listener<string>) {
-//     let num = 0;
-//     this.id = setInterval(() => {
-//       num += 1;
-//       listener.next(`yo ${num}`);
-//     }, 2000)[Symbol.toPrimitive]();
-//   },
+(async () => {
+  for await (const value of stream) {
+    console.log('Stream 1:', value);
+  }
+})();
 
-//   stop: function () {
-//     clearInterval(this.id);
-//   },
-// };
+(async () => {
+  for await (const value of stream) {
+    console.log('Stream 2:', value);
+  }
+})();
 
-// const stream = xs.create(producer);
-// stream.addListener({ next: (val) => console.log('first', val) });
-// stream.addListener({ next: (val) => console.log('second', val) });
+//
+//
+//
+const takeStream = new Stream<number>([1, 2, 3, 4, 5, 6]).take(4);
+(async () => {
+  for await (const value of takeStream) {
+    console.log('Take Stream 1:', value);
+  }
+})();
 
-// setTimeout(() => {
-//   stream.addListener({ next: (val) => console.log('third', val) });
-// }, 4000);
+(async () => {
+  for await (const value of takeStream) {
+    console.log('Take Stream 2:', value);
+  }
+})();
 
-// const streamComplete = rs.empty();
+//
+//
+//
+const mapStream = new Stream<number>([1, 2, 3, 4, 5, 6])
+  .take(3)
+  .map((val) => val * 10);
 
-// const listenerConsole = {
-//   next: (val: unknown) => console.log('II', val),
-//   complete: () => console.log('COMPLETE'),
-//   error: (err: unknown) => console.error(err),
-// };
+(async () => {
+  for await (const value of mapStream) {
+    console.log('Map Stream 1:', value);
+  }
+})();
 
-// streamComplete.addListener(listenerConsole);
+(async () => {
+  for await (const value of mapStream) {
+    console.log('Map Stream 2:', value);
+  }
+})();
 
-// const streamError = rs.throw('My Error');
-// streamError.addListener(listenerConsole);
+//
+//
+//
+const combineStream = Stream.combine(mapStream, stream, takeStream);
 
-// const streamArray = rs.fromIterable(['a', 'b', 'c', 'd']);
-// streamArray.addListener(listenerConsole);
+(async () => {
+  for await (const value of combineStream) {
+    console.log('Combine Stream 1:', value);
+  }
+})();
 
-// const streamOf = rs.of('aa', 'bb', 'cc', 'dd');
-// streamOf.addListener(listenerConsole);
+(async () => {
+  for await (const value of combineStream) {
+    console.log('Combine Stream 2:', value);
+  }
+})();
 
-// const streamNever = rs.never();
-// streamNever.addListener(listenerConsole);
+//
+//
+//
+const a = Stream.fromValue<number>(3);
 
-// stream.addListener(streamNever);
+(async () => {
+  for await (const value of a) {
+    console.log('a1:', value);
+  }
+})();
 
-// const takeStream = stream.take(5);
+(async () => {
+  for await (const value of a) {
+    console.log('a2:', value);
+  }
+})();
 
-// takeStream.addListener(listenerConsole);
+a.updateValue((val) => val + 10);
 
-// const a$ = xs.fromValue<number>(1);
-// const b$ = xs.fromValue<number>(2);
-// const c$ = xs.toMemoryStream(xs.combine(a$, b$, takeStream));
-// c$.addListener(listenerConsole);
+(async () => {
+  for await (const value of a) {
+    console.log('a1:', value);
+  }
+})();
 
-// setTimeout(() => {
-//   b$.updateLastValue(() => 3);
-// }, 12000);
+(async () => {
+  for await (const value of a) {
+    console.log('a2:', value);
+  }
+})();
 
-// const mapStream = c$.map(([valA, valB, valC]) => {
-//   console.log('mapStream C:', valC);
-//   return valA + valB;
-// });
+//
+//
+//
+const ea = Stream.fromValue<number>(1),
+  eb = Stream.fromValue<number>(2),
+  ec = Stream.combine(ea, eb),
+  ed = ec.map(([aValue, bValue]) => aValue + bValue + 5);
 
-// const mapListenerConsole = {
-//   next: (val: unknown) => console.log('map:', val),
-//   complete: () => console.log('map COMPLETE'),
-//   error: (err: unknown) => console.error(err),
-// };
+(async () => {
+  console.log('ea', ea.getValue());
+})();
 
-// mapStream.addListener(mapListenerConsole);
+(async () => {
+  console.log('eb', await eb.getValue());
+})();
 
-// console.log('GET map last value:', mapStream.getLastValue());
-// b$.updateLastValue(() => 4);
-// console.log('GET map last value:', mapStream.getLastValue());
+(async () => {
+  console.log('ec', await ec.getValue());
+})();
+
+(async () => {
+  console.log('ed', await ed.getValue());
+})();
+
+(async () => {
+  for await (const value of ed) {
+    console.log('ed1:', value);
+  }
+})();
+
+ea.updateValue((val) => val + 10);
+
+(async () => {
+  console.log('ea', await ea.getValue());
+})();
+
+(async () => {
+  console.log('eb', await eb.getValue());
+})();
+
+(async () => {
+  console.log('ec', await ec.getValue());
+})();
+
+(async () => {
+  console.log('ed', await ed.getValue());
+})();
+
+(async () => {
+  for await (const value of ed) {
+    console.log('ed2:', value);
+  }
+})();
