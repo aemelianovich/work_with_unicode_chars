@@ -2,160 +2,158 @@
 
 // import type { Listener } from './interfaces/listener';
 import Stream from './streams/stream.js';
-import { EventEmitter } from 'node:events';
+// import { EventEmitter } from 'node:events';
 
-// Check Event Stream
-const myEE = new EventEmitter();
+//
+//
+//
+const stream = new Stream<number>([1, 2, 3, 4, 5, 6]);
 
-async function* on(el: EventEmitter, event: string): AsyncGenerator<number> {
-  const isIterate = true;
-  let inc = 0;
-  let cb: (() => void) | null;
-  el.on(event, () => {
-    if (cb != null) {
-      cb();
-      cb = null;
-    }
-  });
-
-  while (isIterate) {
-    if (inc === 8) {
-      //throw new Error('MY FAKE ERROR');
-      return 6666;
-    }
-    yield new Promise<number>((resolve) => {
-      inc++;
-      cb = () => resolve(inc);
-    });
+(async () => {
+  for await (const value of stream) {
+    console.log('Stream 1:', value);
   }
-}
+})();
 
-const stream = new Stream<number>(on(myEE, 'click'));
-setInterval(() => myEE.emit('click'), 2000);
-
-const listenerConsole = {
-  next: (val: number) => console.log('II', val),
-  return: (val?: number) => console.log('II COMPLETE', val),
-  throw: (err: unknown) => console.log('II ERROR:', err),
-};
-
-const listener = Stream.createListener(listenerConsole);
-
-const listenerConsole2 = {
-  next: (val: number) => console.log('BLA BLA', val),
-  return: () => console.log('BLA COMPLETE'),
-  throw: (err: unknown) => console.log('BLA ERROR:', err),
-};
-
-const listener2 = Stream.createListener(listenerConsole2);
-
-const streamListener2 = new Stream<number>();
-streamListener2.addListener(listener2);
-
-stream.addListener(listener);
-stream.addListener(streamListener2);
-
-const listenerConsole3 = {
-  next: (val: number) => console.log('3LIST', val),
-  return: (val?: number) => console.log('3LIST COMPLETE', val),
-  throw: (err: unknown) => console.log('3LIST ERROR:', err),
-};
-
-const listener3 = Stream.createListener(listenerConsole3);
-setTimeout(() => stream.addListener(listener3), 6000);
-setTimeout(() => stream.removeListener(listener3), 12000);
-console.log('-------');
+(async () => {
+  for await (const value of stream) {
+    console.log('Stream 2:', value);
+  }
+})();
 
 //
 //
-// Check Value Stream
-const a = Stream.fromValue(1);
-const b = Stream.fromValue(2);
-//const c = Stream.combine(a, b);
-//const d = Stream.toValue(c.map(([aValue, bValue]) => aValue + bValue + 5));
+//
+const takeStream = new Stream<number>([1, 2, 3, 4, 5, 6]).take(4);
+(async () => {
+  for await (const value of takeStream) {
+    console.log('Take Stream 1:', value);
+  }
+})();
 
-console.log('a:', a.getLastValue()); // 1
-console.log('b:', b.getLastValue()); // 2
-console.log('-------');
+(async () => {
+  for await (const value of takeStream) {
+    console.log('Take Stream 2:', value);
+  }
+})();
 
 //
 //
-// Check Complete Stream
-const completeConsole = {
-  next: () => console.log('Empty Stream next'),
-  return: () => console.log('Empty Stream COMPLETE'),
-  throw: (err: unknown) => console.log('Empty Stream ERROR:', err),
-};
+//
+const mapStream = new Stream<number>([1, 2, 3, 4, 5, 6])
+  .take(3)
+  .map((val) => val * 10);
 
-const streamComplete = Stream.empty();
-streamComplete.addListener(Stream.createListener(completeConsole));
-console.log('-------');
+(async () => {
+  for await (const value of mapStream) {
+    console.log('Map Stream 1:', value);
+  }
+})();
+
+(async () => {
+  for await (const value of mapStream) {
+    console.log('Map Stream 2:', value);
+  }
+})();
 
 //
 //
-// Check Error Stream
-const errorConsole = {
-  next: () => console.log('Error Stream next'),
-  return: () => console.log('Error Stream COMPLETE'),
-  throw: (err: unknown) => console.log('Error Stream ERROR:', err),
-};
+//
+const combineStream = Stream.combine(mapStream, stream, takeStream);
 
-const streamError = Stream.throw('My ERROR stream check');
-streamError.addListener(Stream.createListener(errorConsole));
-console.log('-------');
+(async () => {
+  for await (const value of combineStream) {
+    console.log('Combine Stream 1:', value);
+  }
+})();
+
+(async () => {
+  for await (const value of combineStream) {
+    console.log('Combine Stream 2:', value);
+  }
+})();
 
 //
 //
-// Check Never Stream
-const neverConsole = {
-  next: () => console.log('Never Stream next'),
-  return: () => console.log('Never Stream COMPLETE'),
-  throw: (err: unknown) => console.log('Never Stream ERROR:', err),
-};
+//
+const a = Stream.fromValue<number>(3);
 
-const neverListener = Stream.createListener(neverConsole);
-const neverStream = Stream.never();
-neverStream.addListener(neverListener);
-console.log('------Never------');
-setTimeout(() => {
-  neverStream.removeListener(neverListener);
-}, 2000);
-console.log('-------');
+(async () => {
+  for await (const value of a) {
+    console.log('a1:', value);
+  }
+})();
+
+(async () => {
+  for await (const value of a) {
+    console.log('a2:', value);
+  }
+})();
+
+a.updateValue((val) => val + 10);
+
+(async () => {
+  for await (const value of a) {
+    console.log('a1:', value);
+  }
+})();
+
+(async () => {
+  for await (const value of a) {
+    console.log('a2:', value);
+  }
+})();
 
 //
 //
-// Check Of Stream
-const ofConsole = {
-  next: (val: number) => console.log('Of Stream next', val),
-  return: () => console.log('Of Stream COMPLETE'),
-  throw: (err: unknown) => console.log('Of Stream ERROR:', err),
-};
-
-const streamOF = Stream.of<number>(1, 2, 3);
-streamOF.addListener(Stream.createListener(ofConsole));
-console.log('-------');
-
 //
-//
-// Check Map Stream
-const MapConsole = {
-  next: (val: number) => console.log('Map Stream next', val),
-  return: (val?: number) => console.log('Map Stream COMPLETE', val),
-  throw: (err: unknown) => console.log('Map Stream ERROR:', err),
-};
+const ea = Stream.fromValue<number>(1),
+  eb = Stream.fromValue<number>(2),
+  ec = Stream.combine(ea, eb),
+  ed = ec.map(([aValue, bValue]) => aValue + bValue + 5);
 
-const mapStream = stream.map((val) => val * 10);
-mapStream.addListener(Stream.createListener(MapConsole));
+(async () => {
+  console.log('ea', ea.getValue());
+})();
 
-//
-//
-// Check Take Stream
-const TakeConsole = {
-  next: (val: number) => console.log('Take Stream next', val),
-  return: (val?: number) => console.log('Take Stream COMPLETE', val),
-  throw: (err: unknown) => console.log('Take Stream ERROR:', err),
-};
+(async () => {
+  console.log('eb', await eb.getValue());
+})();
 
-const takeStream = stream.map((val) => val * 10).take(5);
-takeStream.addListener(Stream.createListener(TakeConsole));
-console.log('instanceof', stream instanceof Stream);
+(async () => {
+  console.log('ec', await ec.getValue());
+})();
+
+(async () => {
+  console.log('ed', await ed.getValue());
+})();
+
+(async () => {
+  for await (const value of ed) {
+    console.log('ed1:', value);
+  }
+})();
+
+ea.updateValue((val) => val + 10);
+
+(async () => {
+  console.log('ea', await ea.getValue());
+})();
+
+(async () => {
+  console.log('eb', await eb.getValue());
+})();
+
+(async () => {
+  console.log('ec', await ec.getValue());
+})();
+
+(async () => {
+  console.log('ed', await ed.getValue());
+})();
+
+(async () => {
+  for await (const value of ed) {
+    console.log('ed2:', value);
+  }
+})();

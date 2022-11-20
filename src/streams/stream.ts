@@ -1,416 +1,109 @@
-import type { Listener, ListenerMethods } from '../interfaces/listener';
-import type { Producer, ProducerIterator } from '../interfaces/producer';
-import type { StreamOptions } from '../interfaces/stream_options';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-this-alias */
 
-// Operators
-import { map } from '../operators/map';
-import { take } from '../operators/take';
+// Stream is an lazy event emitter.
+// Based on the stream you can create iterator and recieve a new value from the stream
+export default class Stream<T> implements AsyncIterable<T> {
+  //
+  ////////////////////// Specific producers
+  //
+  static fromValue<T extends number | string>(value: T): Stream<T> {
+    const iterable = {
+      value: value,
 
-// Producers
-import getProducerFromStream from '../producers/from_stream';
+      updateValue(fn: (value: T) => T) {
+        this.value = fn(value);
+      },
 
-// Aggregators
-// import Combine from '../aggregators/combine';
+      [Symbol.iterator]() {
+        const value = this.value;
+        return {
+          isDone: false,
+          next() {
+            if (this.isDone) {
+              return { done: true, value: undefined };
+            }
+            this.isDone = true;
+            return { done: false, value };
+          },
+        };
+      },
+    };
 
-// Stream is an lazy event emitter with multiply Listeners
-// When an event happens on the Stream, it is broadcast to all its Listeners at the same time.
-// Stream can has A Producer is like a machine that produces events to be broadcast on a Stream.
+    return new Stream(<Iterable<T>>iterable);
+  }
 
-// Stream itself implements AsyncGenerator interface and can be used as Listener
+  //
+  ////////////////////// Aggregators
+  //
 
-// Stream with isMemoryStream = true flag is a Stream which can store the last broadcasted event
-// Each new added listener will be immediately broadcasted with the last event
-// (By default Stream will broadcast new values to the new added listeners)
-export default class Stream<T> implements AsyncGenerator<T> {
-  // Create listener from object with methods next, return, throw
-  static createListener<T>(
-    methods: ListenerMethods<T>,
-  ): Generator<T | undefined> {
-    function* create(): Generator<T | undefined, T | undefined, T> {
+  /**
+   * Combines multiple input streams together to return a stream whose events
+   * are arrays that collect the latest events from each input stream.
+   *
+   * It's essentially a way of joining together
+   * the events from multiple streams.
+   *
+   * Marble diagram:
+   *
+   * ```text
+   * --1----2-----3--------4---
+   * ----a-----b-----c--d------
+   *          combine
+   * ----1a-2a-2b-3b-3c-3d-4d--
+   * ```
+   */
+  static combine(...streams: Array<Stream<any>>): Stream<Array<any>> {
+    const getAsyncGen = async function* () {
+      const iterators = streams.map((stream) => stream[Symbol.asyncIterator]());
+
       while (true) {
-        const res = yield;
-        methods.next(res);
-      }
-    }
+        const values = <any>[];
+        let done = true;
+        for (const iter of iterators) {
+          const res = await iter.next();
+          if (res.done === false) {
+            done = res.done;
+          }
+          values.push(res.value);
+        }
 
-    const generator = create();
-
-    generator.return = (value) => {
-      if (methods.return !== undefined) {
-        methods.return(value);
-      }
-      return { done: true, value: value };
-    };
-
-    generator.throw = (err) => {
-      if (methods.throw !== undefined) {
-        methods.throw(err);
-      }
-      return { done: true, value: undefined };
-    };
-
-    generator.next();
-    return generator;
-  }
-
-  /**
-   * Creates a Stream that does nothing when started. It never emits any event.
-   *
-   * Marble diagram:
-   *
-   * ```text
-   *          never
-   * -----------------------
-   * ```
-   */
-  static never<T>(): Stream<T> {
-    const options = {
-      isMemoryStream: false,
-      isInfiniteStream: true,
-    };
-
-    const neverStream = new Stream<T>([], options);
-
-    return neverStream;
-  }
-
-  /**
-   * Creates a Stream that immediately emits the "complete" notification when
-   * started, and that's it.
-   *
-   * Marble diagram:
-   *
-   * ```text
-   * empty
-   * -|
-   * ```
-   */
-  static empty<T>(): Stream<T> {
-    const options = {
-      isMemoryStream: false,
-      isInfiniteStream: false,
-    };
-
-    const emptyStream = new Stream<T>([], options);
-
-    return emptyStream;
-  }
-
-  /**
-   * Creates a Stream that immediately emits an "error" notification with the
-   * value you passed as the `error` argument when the stream starts, and that's
-   * it.
-   *
-   * Marble diagram:
-   *
-   * ```text
-   * throw(X)
-   * -X
-   * ```
-   */
-  static throw(error: unknown): Stream<unknown> {
-    const options = {
-      isMemoryStream: false,
-      isInfiniteStream: false,
-    };
-
-    const errorIter = function* () {
-      throw error;
-      yield;
-    };
-
-    const throwStream = new Stream<unknown>(errorIter(), options);
-
-    return throwStream;
-  }
-
-  /**
-   * Create Stream with isMemoryStream = true and isInfiniteStream=true to keep single value
-   * Dummy listener will be assigned to init last value
-   * This value will be emitted immediately for each new listener
-   *
-   * Marble diagram:
-   *
-   * ```text
-   * fromValue(1)
-   * 1 for each new listener
-   * ```
-   */
-  static fromValue<T extends string | number | boolean>(value: T): Stream<T> {
-    const options = {
-      isMemoryStream: true,
-      isInfiniteStream: true,
-    };
-    const valueStream = new Stream<T>([value], options);
-
-    // assign Dummy Listener to start a stream
-    valueStream.addListener(
-      Stream.createListener({
-        next: () => {
+        if (done) {
           return;
-        },
-      }),
-    );
+        }
 
-    return valueStream;
-  }
-
-  /**
-   * Create Stream based on passed stream
-   *
-   */
-  static fromStream<T>(stream: Stream<T>): Stream<T> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let outStream = <Stream<T>>(<any>null);
-
-    const listener = {
-      next: (value: T) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        outStream.next(value);
-      },
-      return: (value?: T) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        outStream.return(value);
-      },
-      throw: (err: unknown) => {
-        outStream.throw(err);
-      },
+        yield values;
+      }
     };
 
-    const options = {
-      isMemoryStream: stream.options.isMemoryStream,
-      isInfiniteStream: true,
-    };
-    outStream = new Stream<T>(getProducerFromStream(stream, listener), options);
-
-    return outStream;
-  }
-  // Argument of type 'Listener<T> | { next: (value: T) => void; return: (value?: T | undefined) => void; throw: (err: unknown) => void; }' is not assignable to parameter of type 'Listener<T>'.
-  // Type '{ next: (value: T) => void; return: (value?: T) => void; throw: (err: unknown) => void; }' is not assignable to type 'Listener<T>'.
-  //   Types of property 'next' are incompatible.
-  //     Type '(value: T) => void' is not assignable to type '((...args: [] | [unknown]) => IteratorResult<T | undefined, any>) | ((...args: [] | [unknown]) => Promise<IteratorResult<T | undefined, any>>)'.
-  //       Type '(value: T) => void' is not assignable to type '(...args: [] | [unknown]) => IteratorResult<T | undefined, any>'.
-  //         Type 'void' is not assignable to type 'IteratorResult<T | undefined, any>'.
-
-  /**
-   * Creates a Stream that immediately emits the arguments that you give to
-   * *of*, then completes.
-   *
-   * Marble diagram:
-   *
-   * ```text
-   * of(1,2,3)
-   * 123|
-   * ```
-   */
-  static of<T>(...items: Array<T>): Stream<T> {
-    return new Stream<T>(items);
+    return new Stream(getAsyncGen);
   }
 
-  producer: Producer<T> | null;
-  #producerIter: ProducerIterator<T> | null;
-  protected listeners: Array<Listener<T>>;
-  #stopID: NodeJS.Timeout | null;
-  #err: unknown | null;
-  protected lastValue: T | null;
-  options: StreamOptions;
+  //
+  ////////////////////// Properties & Constructor
+  //
+  #producer: AsyncIterable<T> | Iterable<T> | (() => AsyncGenerator<T>);
 
   constructor(
-    producer?: Producer<T>,
-    options: StreamOptions = {
-      isMemoryStream: false,
-      isInfiniteStream: false,
-    },
+    producer: AsyncIterable<T> | Iterable<T> | (() => AsyncGenerator<T>),
   ) {
-    this.producer = producer || null;
-    this.#producerIter = null;
-    this.listeners = [];
-    this.#stopID = null;
-    this.#err = null;
-    this.options = options;
-    this.lastValue = null;
-
-    if (producer instanceof Stream) {
-      return Stream.fromStream(producer);
-    }
+    this.#producer = producer;
   }
 
-  [Symbol.asyncIterator]() {
-    return this;
+  async *[Symbol.asyncIterator]() {
+    let iterable;
+    if (typeof this.#producer === 'function') {
+      iterable = this.#producer();
+    } else {
+      iterable = this.#producer;
+    }
+
+    yield* iterable;
   }
 
-  // tear down logic, after error or complete
-  #clearStream(): void {
-    this.#err = null;
-    this.listeners = [];
-    this.lastValue = null;
-    this.#producerIter = null;
-  }
-
-  // We can ask value only from memory stream
-  getLastValue(): T | null {
-    if (this.options.isMemoryStream) {
-      return this.lastValue;
-    }
-
-    throw new Error('Not a memory stream');
-  }
-
-  // We can update value only in memory stream
-  // It will immediately brodcast updated value
-  updateLastValue(cb: (value: T | null) => T): void {
-    if (this.options.isMemoryStream) {
-      const res = cb(this.lastValue);
-      this.lastValue = res;
-      this.next(res);
-      return;
-    }
-
-    throw new Error('Not a memory stream');
-  }
-
-  async #startStream() {
-    if (this.producer === null) {
-      return;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const producer = <any>this.producer;
-    let isAsync = true;
-
-    if (typeof producer[Symbol.asyncIterator] === 'function') {
-      this.#producerIter = <AsyncIterator<T>>producer[Symbol.asyncIterator]();
-    } else if (typeof producer[Symbol.iterator] === 'function') {
-      this.#producerIter = <Iterator<T>>producer[Symbol.iterator]();
-      isAsync = false;
-    }
-
-    let value: T | undefined;
-    try {
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        const res = <IteratorResult<T>>(isAsync
-          ? // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            await this.#producerIter!.next()
-          : // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            this.#producerIter!.next());
-
-        value = res.value;
-
-        if (res.done) {
-          break;
-        } else {
-          this.next(value);
-        }
-      }
-      // for await (const value of <any>this.#producerIter) {
-      //   this.next(value);
-      // }
-    } catch (err) {
-      this.throw(err);
-      return;
-    }
-
-    if (!this.options.isInfiniteStream) {
-      this.return(value);
-    }
-  }
-
-  // Stream itself is a AsyncIterator
-  // It should implement next, return, throw methods
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async next(...values: [T | undefined]): Promise<IteratorResult<T | any>> {
-    this.lastValue = values[values.length - 1] || null;
-    for (const listener of this.listeners) {
-      listener.next(...values);
-    }
-    return { done: false, value: this.lastValue };
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async return(...values: [T | undefined]): Promise<IteratorResult<T | any>> {
-    if (
-      this.#producerIter !== null &&
-      typeof this.#producerIter.return === 'function'
-    ) {
-      this.#producerIter.return(...values);
-    }
-
-    for (const listener of this.listeners) {
-      listener.return(...values);
-    }
-
-    this.#clearStream();
-    return { done: true, value: this.lastValue };
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async throw(e: unknown): Promise<IteratorResult<T | any>> {
-    this.#err = e;
-
-    if (
-      this.#producerIter !== null &&
-      typeof this.#producerIter.return === 'function'
-    ) {
-      this.#producerIter.return();
-    }
-
-    for (const listener of this.listeners) {
-      listener.throw(e);
-    }
-
-    this.#clearStream();
-    return { done: true, value: undefined };
-  }
-
-  // Add a Listener to the Stream.
-  addListener(listener: Listener<T>): void {
-    if (this.options.isMemoryStream && this.lastValue !== null) {
-      listener.next(this.lastValue);
-    }
-
-    this.listeners.push(listener);
-
-    if (this.listeners.length === 1) {
-      // Start producer when the first listener was added
-      if (this.producer !== null) {
-        this.#startStream();
-      }
-
-      // Check whether async stop request was created when number of listeners were 0
-      // stop is async operation in case if we need remove one listener and immediately add another listener
-      // Once we added a new listener then we do not need to stop the stream
-      if (this.#stopID !== null) {
-        clearTimeout(this.#stopID);
-        this.#stopID = null;
-      }
-    }
-  }
-
-  #stopNow() {
-    if (
-      this.#producerIter !== null &&
-      typeof this.#producerIter.return === 'function'
-    ) {
-      this.#producerIter.return();
-    }
-    this.#clearStream();
-  }
-
-  // Removes a Listener from the Stream, assuming the Listener was added to it.
-  removeListener(listener: Listener<T>): void {
-    const i = this.listeners.indexOf(listener);
-    if (i > -1) {
-      this.listeners.splice(i, 1);
-      // Stop producer if all listeners were removed
-      // Do it in async way in case if user would like to remove one listener and immediately add another listener
-      if (this.producer !== null && this.listeners.length === 0) {
-        this.#stopID = setTimeout(() => this.#stopNow());
-      }
-    }
-  }
-
+  //
+  ////////////////////// Operators
+  //
   /**
    * Lets the first number of events from the input stream pass to the
    * output stream, then makes the output stream complete.
@@ -424,8 +117,25 @@ export default class Stream<T> implements AsyncGenerator<T> {
    * ```
    *
    */
-  take(num: number): Stream<T> {
-    return take(num, this);
+  take(max: number): Stream<T> {
+    const iter = this;
+
+    const getAsyncGen = async function* () {
+      let num = 0;
+
+      if (max <= 0) {
+        return;
+      }
+      for await (const value of iter) {
+        yield value;
+        num++;
+        if (num === max) {
+          return;
+        }
+      }
+    };
+
+    return new Stream(getAsyncGen);
   }
 
   /**
@@ -440,7 +150,35 @@ export default class Stream<T> implements AsyncGenerator<T> {
    * --10--30-50----70-----
    * ```
    */
-  map<R>(cb: (t: T) => R): Stream<R> {
-    return map(cb, this);
+  map<R>(fn: (value: T) => R): Stream<R> {
+    const iter = this;
+
+    const getAsyncGen = async function* () {
+      for await (const value of iter) {
+        yield fn(value);
+      }
+    };
+
+    return new Stream(getAsyncGen);
+  }
+
+  async getValue(): Promise<T> {
+    const iter = this[Symbol.asyncIterator]();
+    const res = await iter.next();
+    if (res.value !== undefined) {
+      return res.value;
+    }
+
+    throw new Error('Unable to get a value');
+  }
+
+  updateValue(fn: (value: T) => T) {
+    const valProducer = <any>this.#producer;
+    if (valProducer.updateValue !== undefined) {
+      valProducer.updateValue(fn);
+      return;
+    }
+
+    throw new Error('Not a single value producer');
   }
 }
