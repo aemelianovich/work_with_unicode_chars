@@ -24,5 +24,5 @@ It should properly works with surrogate pairs in the UTF-16 encoding.
 ```js
 import getStrIter from './src';
 
-console.log([...getStrIter('wd😀2🧓1🇦🇩')]); // ['w', 'd', '😀', '2', '🧓', '1', '🇦', '🇩']
+console.log([...getStrIter('amd😀3452🧓1v🇦🇩😀')]); // ['a', 'm', 'd', '😀', '3', '4', '5','2', '🧓', '1', 'v', '🇦', '🇩', '😀']
 ```
