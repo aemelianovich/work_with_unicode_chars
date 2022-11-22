@@ -7,9 +7,6 @@ build:
 run:
 	node --es-module-specifier-resolution=node ./dist/index.js
 
-run-scenario1:
-	node --es-module-specifier-resolution=node ./example/scenario_1.js
-
 test:
 	npm test
 

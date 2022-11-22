@@ -1,3 +1,28 @@
-[![Maintainability](https://api.codeclimate.com/v1/badges/243d003a0181923ef033/maintainability)](https://codeclimate.com/github/aemelianovich/reactive_lib/maintainability)
-[![Node CI](https://github.com/aemelianovich/reactive_lib/actions/workflows/nodejs.yml/badge.svg)](https://github.com/aemelianovich/reactive_lib/actions/workflows/nodejs.yml)
-[![Test Coverage](https://api.codeclimate.com/v1/badges/243d003a0181923ef033/test_coverage)](https://codeclimate.com/github/aemelianovich/reactive_lib/test_coverage)
+# Work with unicode chars
+
+Implementation of different use cases that needs to work with unicode chars
+
+## isNumber advanced method
+
+Check whether passed string is number or not.
+Can support different alphabets, e.g. Latin and Roman alphabets(Easy to extend).
+Numbers from different alphabets treated as not a number.
+
+```js
+import isNumber from './src';
+
+console.log(checkNumber('1234567890')); // true
+console.log(checkNumber('ⅯⅩⅧ')); // true
+console.log(checkNumber('ⅯⅩⅧ12')); // false
+```
+
+## strIter mimic native string iterator
+
+Custom string iterator that mimics the native string iterator,
+It should properly works with surrogate pairs in the UTF-16 encoding.
+
+```js
+import getStrIter from './src';
+
+console.log([...getStrIter('wd😀2🧓1🇦🇩')]); // ['w', 'd', '😀', '2', '🧓', '1', '🇦', '🇩']
+```
