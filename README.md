@@ -11,9 +11,9 @@ Numbers from different alphabets treated as not a number.
 ```js
 import isNumber from './src';
 
-console.log(checkNumber('1234567890')); // true
-console.log(checkNumber('ⅯⅩⅧ')); // true
-console.log(checkNumber('ⅯⅩⅧ12')); // false
+console.log(isNumber('1234567890')); // true
+console.log(isNumber('ⅯⅩⅧ')); // true
+console.log(isNumber('ⅯⅩⅧ12')); // false
 ```
 
 ## strIter mimic native string iterator
